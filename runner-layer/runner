@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Imp passes the one-time registration payload through this environment
+# variable. It must never be written to logs or included in an argv list.
+: "${IMP_GITHUB_JITCONFIG:?IMP_GITHUB_JITCONFIG is required}"
+
+cd /home/runner/actions-runner
+./config.sh --jitconfig "$IMP_GITHUB_JITCONFIG" --unattended
+exec ./run.sh
