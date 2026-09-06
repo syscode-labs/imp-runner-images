@@ -2,6 +2,7 @@
 set -euo pipefail
 
 : "${RUNNER_VERSION:?set RUNNER_VERSION, for example 2.328.0}"
+RUNNER_VERSION="${RUNNER_VERSION#v}"
 : "${RUNNER_ARCH:=x64}"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
