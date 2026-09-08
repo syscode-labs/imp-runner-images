@@ -2,9 +2,14 @@
 set -euo pipefail
 
 # Imp passes the one-time registration payload through this environment
-# variable. It must never be written to logs or included in an argv list.
+# variable. It must never be written to logs, image metadata, or disk.
 : "${IMP_GITHUB_JITCONFIG:?IMP_GITHUB_JITCONFIG is required}"
+
+# The guest agent runs this entrypoint as root. actions-runner requires this
+# explicit opt-in even though the guest itself is ephemeral.
+export RUNNER_ALLOW_RUNASROOT=1
 
 cd /home/runner/actions-runner
 ./config.sh --jitconfig "$IMP_GITHUB_JITCONFIG" --unattended
+unset IMP_GITHUB_JITCONFIG
 exec ./run.sh
