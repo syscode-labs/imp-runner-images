@@ -35,7 +35,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Prepare runner layer
         env:
-          RUNNER_VERSION: ${{ inputs.runner-version || (github.event_name == 'push' && github.ref_name) || '2.337.0' }}
+          RUNNER_VERSION: ${{ inputs.runner-version || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '2.337.0' }}
           RUNNER_ARCH: ${{ matrix.runner_arch }}
         run: ./build-runner-layer.sh
       - name: Build and smoke amd64 images
