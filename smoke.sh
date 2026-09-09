@@ -21,17 +21,20 @@ fail() {
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 wrapper="$repo_root/runner-layer/runner"
 
-# Keep this check explicit: a JIT config is consumed by config.sh once, then
-# removed before the long-running runner process starts. Do not expose it in
-# trace output, image metadata, or wrapper output.
-grep -Fqx './config.sh --jitconfig "$IMP_GITHUB_JITCONFIG" --unattended' "$wrapper" \
-  || fail "wrapper does not configure from IMP_GITHUB_JITCONFIG"
+# Keep these checks explicit: the JIT config is handed to run.sh through its
+# environment only. Do not expose it in argv, trace output, image metadata, or
+# wrapper output.
+expected_export="export ACTIONS_RUNNER_INPUT_JITCONFIG=\"\$IMP_GITHUB_JITCONFIG\""
+grep -Fqx "$expected_export" "$wrapper" \
+  || fail "wrapper does not export ACTIONS_RUNNER_INPUT_JITCONFIG"
 grep -Fqx 'unset IMP_GITHUB_JITCONFIG' "$wrapper" \
-  || fail "wrapper retains the JIT config after configuration"
+  || fail "wrapper retains Imp's JIT config handoff variable"
 grep -Fqx 'exec ./run.sh' "$wrapper" \
   || fail "wrapper does not exec the runner"
 grep -Fqx 'export RUNNER_ALLOW_RUNASROOT=1' "$wrapper" \
   || fail "wrapper does not support root execution"
+! grep -Eq 'config\.sh|--jitconfig' "$wrapper" \
+  || fail "wrapper puts the JIT config in argv"
 ! grep -Eq '(^|[[:space:]])set[[:space:]].*x|echo.*IMP_GITHUB_JITCONFIG|printf.*IMP_GITHUB_JITCONFIG' "$wrapper" \
   || fail "wrapper could log the JIT config"
 
@@ -67,30 +70,26 @@ tar -xOf "$tmp/$layer" usr/local/bin/runner >"$tmp/image-runner"
 cmp -s "$wrapper" "$tmp/image-runner" || fail "runner image wrapper differs from source"
 
 # Exercise the wrapper as root with a harmless synthetic JIT value. The fake
-# runner verifies argument order and that JIT data is absent from run.sh's env;
-# no real registration payload is printed or persisted.
+# runner verifies the environment handoff, empty argv, and removal of Imp's
+# variable; no real registration payload is printed or persisted.
 mkdir -p "$tmp/actions-runner"
-cat >"$tmp/actions-runner/config.sh" <<'CONFIG'
-#!/usr/bin/env bash
-set -euo pipefail
-[[ "${RUNNER_ALLOW_RUNASROOT:-}" == 1 ]]
-[[ "$#" == 3 && "$1" == --jitconfig && "$2" == "$EXPECTED_JITCONFIG" && "$3" == --unattended ]]
-printf 'config-ok\n'
-CONFIG
 cat >"$tmp/actions-runner/run.sh" <<'RUN'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ "$#" == 0 ]]
+[[ "${ACTIONS_RUNNER_INPUT_JITCONFIG:-}" == "$EXPECTED_JITCONFIG" ]]
 [[ -z "${IMP_GITHUB_JITCONFIG+x}" ]]
 [[ "${RUNNER_ALLOW_RUNASROOT:-}" == 1 ]]
 printf 'run-ok\n'
 RUN
-chmod 0755 "$tmp/actions-runner/config.sh" "$tmp/actions-runner/run.sh"
+chmod 0755 "$tmp/actions-runner/run.sh"
 output="$(docker run --rm --user 0:0 \
   --mount "type=bind,src=$tmp/actions-runner,dst=/home/runner/actions-runner,readonly" \
   --mount "type=bind,src=$wrapper,dst=/usr/local/bin/runner,readonly" \
   -e IMP_GITHUB_JITCONFIG=synthetic-jit-smoke-value \
   -e EXPECTED_JITCONFIG=synthetic-jit-smoke-value \
   --entrypoint /usr/local/bin/runner "$BASE_IMAGE")"
-[[ "$output" == $'config-ok\nrun-ok' ]] || fail "wrapper root execution failed"
+[[ "$output" == 'run-ok' ]] || fail "wrapper root execution failed"
+[[ "$output" != *synthetic-jit-smoke-value* ]] || fail "wrapper leaked JIT config to logs"
 
 echo "smoke passed: wrapper/root execution, runner image executable, and base CA/git HTTPS/DNS/eth0 prerequisites"
