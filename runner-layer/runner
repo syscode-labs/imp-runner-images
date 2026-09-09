@@ -10,6 +10,11 @@ set -euo pipefail
 export ACTIONS_RUNNER_INPUT_JITCONFIG="$IMP_GITHUB_JITCONFIG"
 unset IMP_GITHUB_JITCONFIG
 
+# The guest agent is PID 1 in a minimal VM and may not provide a usable PATH.
+# GitHub Actions invokes every `run:` step through `sh`; make the base image's
+# POSIX shell discoverable without changing the JIT handoff contract.
+export PATH="/usr/local/bin:/usr/bin:/bin${PATH:+:$PATH}"
+
 # The guest agent runs this entrypoint as root. actions-runner requires this
 # explicit opt-in even though the guest itself is ephemeral.
 export RUNNER_ALLOW_RUNASROOT=1
